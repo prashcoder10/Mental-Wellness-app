@@ -232,14 +232,71 @@ def render_thought_record():
 
 
 # Placeholder functions for other tabs
+# def render_pattern_identification():
+#     st.subheader("🔍 Identify Thought Patterns")
+#     st.markdown("Analyze patterns in your thoughts over time to understand triggers and reactions.")
+
+# def render_cbt_education():
+#     st.subheader("📚 Learn About CBT")
+#     st.markdown("Learn about cognitive distortions, thought patterns, and strategies to challenge negative thinking.")
+
+# def render_cbt_progress():
+    # st.subheader("📊 Your CBT Progress")
+#     st.markdown("Track your thought records and progress over time to observe improvement and patterns.")
+
+
+
 def render_pattern_identification():
+"""Identify patterns across saved thought records"""
     st.subheader("🔍 Identify Thought Patterns")
-    st.markdown("Analyze patterns in your thoughts over time to understand triggers and reactions.")
+    records = st.session_state.data_manager.get_all_cbt_records()
+    if not records:
+         st.info("No thought records found. Please create some records first.")
+         return
+
+# Count cognitive distortions across records
+    distortion_count = {}
+    for record in records:
+         insights = record.get("ai_insights", {})
+         for dist in insights.get("cognitive_distortions", []):
+              distortion_count[dist] = distortion_count.get(dist, 0) + 1
+
+    st.markdown("### Common Cognitive Distortions in Your Records")
+    if distortion_count:
+        for dist, count in distortion_count.items():
+             st.write(f"• {dist}: {count} occurrence(s)")
+    else:
+        st.info("No cognitive distortions detected yet.")
+
+
 
 def render_cbt_education():
+"""Provide educational content for CBT"""
     st.subheader("📚 Learn About CBT")
-    st.markdown("Learn about cognitive distortions, thought patterns, and strategies to challenge negative thinking.")
+
+    st.markdown("### Cognitive Distortions")
+    for dist in COGNITIVE_DISTORTIONS:
+        st.write(f"• {dist}: {COGNITIVE_DISTORTIONS[dist]}")
+
+    st.markdown("### Example CBT Exercises")
+    for exercise in CBT_EXERCISES:
+        st.write(f"• {exercise['title']}: {exercise['description']}")
 
 def render_cbt_progress():
+"""Show progress from saved thought records"""
     st.subheader("📊 Your CBT Progress")
-    st.markdown("Track your thought records and progress over time to observe improvement and patterns.")
+
+    records = st.session_state.data_manager.get_all_cbt_records()
+    if not records:
+        st.info("No records to show yet.")
+        return
+
+    st.markdown("### Emotional Intensity Over Time")
+    for i, record in enumerate(records, 1):
+        st.write(
+             f"Record {i}: Before = {record['intensity_before']}, After = {record['intensity_after']}"
+         )
+
+    st.markdown("### Situations Logged")
+    for i, record in enumerate(records, 1):
+        st.write(f"Record {i}: {record['situation']}")
