@@ -64,8 +64,15 @@ class GeminiClient:
             return response
         except Exception as e: # added lines inside except
             import traceback
-            traceback.print_exc()  # Print full stack trace
-            print("DEBUG-GEMINI-ERROR:", str(e))
+            error_text = traceback.format_exc()
+
+            # Print inside Streamlit so you can SEE it in Colab UI
+            import streamlit as st
+            st.error("🔥 GEMINI API ERROR")
+            st.code(error_text)
+
+            # Also print in logs (just in case)
+            print("GEMINI ERROR:", error_text)
             return None  # So Streamlit won't crash immediately
 
             # raise RuntimeError(f"Error calling Gemini API: {e}")
