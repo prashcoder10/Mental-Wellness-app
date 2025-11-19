@@ -190,10 +190,23 @@ def run_breathing_exercise(pattern, phases, total_cycles, instruction_container,
                     create_breathing_visual(visual_container, "hold", duration)
             
             # Count down the phase
+            # for second in range(duration, 0, -1):
+            #     time.sleep(1)
+            #     if visual_container is None:
+            #         instruction_container.markdown(f"### {phase} for {second} seconds")
             for second in range(duration, 0, -1):
+                instruction_container.markdown(f"### {phase} for {second} seconds")
+    
+                if visual_container:
+                    if phase.lower() == "inhale":
+                        create_breathing_visual(visual_container, "expand", second)
+                    elif phase.lower() == "exhale":
+                        create_breathing_visual(visual_container, "contract", second)
+                    else:  # hold
+                        create_breathing_visual(visual_container, "hold", second)
+    
                 time.sleep(1)
-                if visual_container is None:
-                    instruction_container.markdown(f"### {phase} for {second} seconds")
+
     
     # Clear containers
     instruction_container.empty()
