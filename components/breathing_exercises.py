@@ -751,28 +751,41 @@ def render_guided_breathing():
 #         visual_container.empty()
 
 def run_breathing_exercise(pattern, phases, total_cycles, instruction_container, progress_container, visual_container):
-    """Run breathing exercise non-blocking way"""
-    for cycle in range(total_cycles):
-        for phase_idx, (duration, phase) in enumerate(zip(pattern, phases)):
+    """Run breathing exercise reliably"""
+    try:
+        for cycle in range(total_cycles):
+            for phase_idx, (duration, phase) in enumerate(zip(pattern, phases)):
 
-            # Update instruction
-            instruction_container.markdown(f"### {phase} for {duration} seconds")
+                # Update instruction
+                instruction_container.markdown(f"### {phase} for {duration} seconds")
 
-            # Update progress
-            overall_progress = (cycle * len(pattern) + phase_idx + 1) / (total_cycles * len(pattern))
-            progress_container.progress(overall_progress)
+                # Update overall progress
+                overall_progress = (cycle * len(pattern) + phase_idx + 1) / (total_cycles * len(pattern))
+                progress_container.progress(overall_progress)
 
-            # Update visual guide (once per phase)
-            if visual_container:
-                if phase.lower() == "inhale":
-                    create_breathing_visual(visual_container, "expand", duration)
-                elif phase.lower() == "exhale":
-                    create_breathing_visual(visual_container, "contract", duration)
-                else:  # hold
-                    create_breathing_visual(visual_container, "hold", duration)
+                # Update visual once per phase if visual guide is on
+                if visual_container:
+                    if phase.lower() == "inhale":
+                        create_breathing_visual(visual_container, "expand", duration)
+                    elif phase.lower() == "exhale":
+                        create_breathing_visual(visual_container, "contract", duration)
+                    else:
+                        create_breathing_visual(visual_container, "hold", duration)
 
-            # Non-blocking countdown simulation
-            st.experimental_rerun()  # this allows the UI to update
+                # Count down for the phase only if visual guide is off
+                if not visual_container:
+                    for second in range(duration, 0, -1):
+                        instruction_container.markdown(f"### {phase} for {second} seconds")
+                        time.sleep(1)
+
+        # Clear containers after exercise
+        instruction_container.empty()
+        progress_container.empty()
+        if visual_container:
+            visual_container.empty()
+
+    except Exception as e:
+        st.error("Exercise was interrupted. That's okay - even a short practice is beneficial!")
 
 
 
