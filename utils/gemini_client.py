@@ -122,11 +122,23 @@ Return a JSON object with ONLY:
 Here is the user's CBT thought record:
 {json.dumps(thought_record, indent=2)}
 """
+        
         raw = self._generate(prompt, json_output=True)
+
+        if not raw:
+            return {"error": "AI returned no response."}
         try:
             return json.loads(raw)
         except:
-            return {"error": "Failed to parse CBT JSON."}
+            import re
+            match = re.search(r"\{.*\}", raw, re.DOTALL)
+            if match:
+                try:
+                    return json.loads(match.group())
+                except:
+                    pass
+            return {"error": "Failed to parse AI JSON. AI output may be malformed."}
+            # return {"error": "Failed to parse CBT JSON."}
 
     # ------------------------------------------------------
     # JOURNAL PROMPT JSON
