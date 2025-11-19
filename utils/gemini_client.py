@@ -59,9 +59,16 @@ class GeminiClient:
                 contents=contents,
                 config=config_params
             )
+            print("DEBUG-RAW-RESPONSE:", response) #to check the error
+
             return response
-        except Exception as e:
-            raise RuntimeError(f"Error calling Gemini API: {e}")
+        except Exception as e: # added lines inside except
+            import traceback
+            traceback.print_exc()  # Print full stack trace
+            print("DEBUG-GEMINI-ERROR:", str(e))
+            return None  # So Streamlit won't crash immediately
+
+            # raise RuntimeError(f"Error calling Gemini API: {e}")
 
     def _extract_text(self, response):
         """Tolerant extractor for response text depending on SDK return format."""
