@@ -1,27 +1,26 @@
+# utils/gemini_client.py
+
 import os
 import json
 import streamlit as st
-from google import genai
+import google.generativeai as genai
 
 
 MODEL = "gemini-2.0-flash"
 
 BASE_SYSTEM_INSTRUCTION = """
-You are a compassionate, non-judgmental, and supportive mental wellness companion. 
-Your primary role is to listen empathetically, validate feelings, and provide evidence-based mental health support, 
-such as guided journaling, CBT principles, and breathing exercises.
-ALWAYS prioritize user safety. If the user expresses thoughts of self-harm or suicide,
-immediately and gently pivot to providing the crisis resources already listed in the prompt.
-NEVER provide diagnosis or claim to be a human professional.
-Keep responses concise, warm, and focused on the user's emotional state.
+You are a compassionate, non-judgmental, and supportive mental wellness companion.
+Your role is to listen empathetically, validate feelings, and offer grounding,
+journaling, CBT reflections and emotional support.
+
+You must NEVER give medical advice, diagnose, or pretend to be a human professional.
+Always prioritize safety, be warm, concise, and emotionally validating.
 """
 
 CRISIS_INSTRUCTION = """
-You are a highly sensitive and empathetic crisis detection AI.
-Analyze the user's message for themes related to self-harm, suicidal ideation,
-severe distress, or abuse.
+You are a crisis risk analysis AI.
 
-Your response MUST be a single JSON object:
+Return ONLY a JSON object:
 {
  "risk_level": "LOW | MODERATE | HIGH | SEVERE",
  "keywords_detected": [],
@@ -36,76 +35,85 @@ class GeminiClient:
         if not api_key:
             raise EnvironmentError("❌ GEMINI_API_KEY not set.")
 
-        try:
-            self.client = genai.Client(api_key=api_key)
-        except Exception as e:
-            raise RuntimeError(f"Failed to initialize Gemini client: {e}")
+        # Configure new Gemini SDK (2025 syntax)
+        genai.configure(api_key=api_key)
 
-    # ------------------------------------------------------
-    # INTERNAL WRAPPER USING NEW CHAT COMPLETIONS ENDPOINT
-    # ------------------------------------------------------
-    def _chat(self, system_instruction, user_message, response_json=False):
+        # Load model
+        self.model = genai.GenerativeModel(MODEL)
+
+    # ---------------------------------------------
+    # INTERNAL WRAPPER (new correct Gemini call)
+    # ---------------------------------------------
+    def _generate(self, prompt, json_output=False):
         try:
-            response = self.client.chat.completions.create(
-                model=MODEL,
-                messages=[
-                    {"role": "system", "content": system_instruction},
-                    {"role": "user", "content": user_message}
-                ],
-                response_format={"type": "json_object"} if response_json else None
+            response = self.model.generate_content(
+                prompt,
+                generation_config={
+                    "response_mime_type": "application/json"
+                    if json_output else "text/plain"
+                }
             )
 
-            return response.choices[0].message["content"]
+            # Extract text safely
+            if json_output:
+                return response.text  # JSON text
+            else:
+                return response.text  # Normal text
 
         except Exception as e:
-            import traceback
-            err = traceback.format_exc()
-
-            st.error("🔥 GEMINI API ERROR")
-            st.code(err)
-
-            print("GEMINI ERROR:", err)
+            st.error("🔥 Gemini API Error")
+            st.code(str(e))
+            print("GEMINI ERROR:", e)
             return None
 
     # ------------------------------------------------------
-    # NORMAL CHAT REPLY
+    # NORMAL CHAT REPLY (fixed for new API)
     # ------------------------------------------------------
     def get_empathetic_response(self, user_input, persona, conversation_history):
         personas = {
-            "peer": "Respond like a supportive friend your age.",
-            "mentor": "Respond like a guiding, encouraging mentor.",
-            "therapist": "Respond like a gentle therapist (no diagnoses)."
+            "peer": "Respond like a warm, supportive peer listener.",
+            "mentor": "Respond like a kind, encouraging mentor.",
+            "therapist": "Respond like a gentle therapeutic companion (no diagnosis)."
         }
 
         persona_text = personas.get(persona, personas["therapist"])
 
-        # Create a linear chat transcript
+        # Build conversation transcript
         chat_text = ""
-        for msg in conversation_history:
+        for msg in conversation_history[-10:]:  # limit context to 10 messages
             chat_text += f"{msg['role'].upper()}: {msg['content']}\n"
 
         chat_text += f"USER: {user_input}"
 
-        full_instruction = BASE_SYSTEM_INSTRUCTION + "\n\n" + persona_text
+        full_prompt = f"""
+{BASE_SYSTEM_INSTRUCTION}
 
-        reply = self._chat(full_instruction, chat_text)
-        return reply or "I'm here for you. Could you share a bit more?"
+Persona style: {persona_text}
+
+Conversation history:
+{chat_text}
+
+Respond empathically, briefly, and safely.
+"""
+
+        reply = self._generate(full_prompt)
+        return reply or "I'm here with you — could you share more about how you're feeling?"
 
     # ------------------------------------------------------
-    # JSON: CBT INSIGHT
+    # JSON: CBT Insight
     # ------------------------------------------------------
     def generate_cbt_insight(self, thought_record: dict) -> dict:
-        user_msg = (
-            "Analyze this thought record and return ONLY a JSON object with:\n"
-            "cognitive_distortions, balanced_thoughts, encouragement.\n\n"
-            + json.dumps(thought_record, indent=2)
-        )
+        prompt = f"""
+Return a JSON object with ONLY:
+- cognitive_distortions
+- balanced_thoughts
+- encouragement
 
-        raw = self._chat(
-            system_instruction="You are a CBT analysis tool.",
-            user_message=user_msg,
-            response_json=True
-        )
+Here is the user's CBT thought record:
+{json.dumps(thought_record, indent=2)}
+"""
+
+        raw = self._generate(prompt, json_output=True)
 
         try:
             return json.loads(raw)
@@ -113,20 +121,21 @@ class GeminiClient:
             return {"error": "Failed to parse CBT JSON."}
 
     # ------------------------------------------------------
-    # JSON: Journal Prompt
+    # JSON: Journal Prompt Generation
     # ------------------------------------------------------
     def generate_personalized_journal_prompt(self, mood_context, recent_themes):
-        user_msg = (
-            "Generate a JSON object with 'prompt' and 'follow_up_questions'.\n\n"
-            f"Mood context: {json.dumps(mood_context, indent=2)}\n"
-            f"Recent themes: {recent_themes}"
-        )
+        prompt = f"""
+Return a JSON object with:
+- prompt
+- follow_up_questions
 
-        raw = self._chat(
-            system_instruction="You create journal prompts for wellness.",
-            user_message=user_msg,
-            response_json=True
-        )
+Mood context:
+{json.dumps(mood_context, indent=2)}
+
+Themes: {recent_themes}
+"""
+
+        raw = self._generate(prompt, json_output=True)
 
         try:
             return json.loads(raw)
@@ -134,18 +143,16 @@ class GeminiClient:
             return {"error": "Failed to parse journal prompt JSON."}
 
     # ------------------------------------------------------
-    # JSON: Crisis Detection
+    # JSON: Crisis Detection Model
     # ------------------------------------------------------
     def analyze_text_for_crisis(self, user_input: str):
-        raw = self._chat(
-            system_instruction=CRISIS_INSTRUCTION,
-            user_message=f"User message: {user_input}",
-            response_json=True
-        )
+        prompt = f"{CRISIS_INSTRUCTION}\n\nUser message: {user_input}"
+
+        raw = self._generate(prompt, json_output=True)
 
         try:
             return json.loads(raw)
-        except Exception:
+        except:
             return {
                 "risk_level": "MODERATE",
                 "keywords_detected": [],
