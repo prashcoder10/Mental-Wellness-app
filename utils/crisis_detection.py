@@ -1,48 +1,48 @@
 # utils/crisis_detection.py
 
 import re
-import streamlit as st # type: ignore
-from utils.gemini_client import GeminiClient # 🌟 CHANGE: Import the new GeminiClient
-from data.crisis_keywords import CRISIS_KEYWORDS, SEVERITY_WEIGHTS
+import streamlit as st  # type: ignore
+from utils.gemini_client import GeminiClient
+from utils.crisis_keywords import CRISIS_KEYWORDS, SEVERITY_WEIGHTS
+
+# Map between different naming conventions to canonical levels
+_CANON_LEVELS = {
+    "low": "LOW",
+    "moderate": "MODERATE",
+    "high": "HIGH",
+    "critical": "CRITICAL",
+    "severe": "CRITICAL",
+    "SEVERE": "CRITICAL",
+    "LOW": "LOW",
+    "MODERATE": "MODERATE",
+    "HIGH": "HIGH"
+}
 
 class CrisisDetector:
     def __init__(self):
-        # 🌟 CHANGE: Initialize the GeminiClient
-        # Note: In the Streamlit flow, this client should already be initialized
-        # via st.session_state.gemini_client, but we'll instantiate one here
-        # to ensure the method call works, or we will modify the calling component.
-        # Since this class is instantiated in chat_interface.py, we rely on the
-        # calling context, but for a standalone fix, we'll try to use the client.
         try:
-            self.gemini_client = GeminiClient()
+            # prefer session gemini client if present
+            self.gemini_client = st.session_state.get('gemini_client') or GeminiClient()
         except Exception:
-            # Fallback if the client can't be created here
-            self.gemini_client = None 
+            self.gemini_client = None
 
         self.crisis_keywords = CRISIS_KEYWORDS
         self.severity_weights = SEVERITY_WEIGHTS
         
     def analyze_text_for_crisis(self, text):
-        """Multi-layered crisis detection system"""
-        
-        # Layer 1: Keyword-based detection
         keyword_risk = self._keyword_based_detection(text)
-        
-        # Layer 2: AI-powered sentiment and risk analysis (using Gemini)
         if self.gemini_client:
-            # 🌟 CHANGE: Use the GeminiClient's dedicated crisis analysis method
-            ai_analysis = self.gemini_client.analyze_text_for_crisis(text)
+            try:
+                ai_analysis = self.gemini_client.analyze_text_for_crisis(text)
+            except Exception:
+                ai_analysis = {"risk_level": "MODERATE", "keywords_detected": [], "analysis": "AI error"}
         else:
-            # Fallback if client initialization failed
             ai_analysis = {"risk_level": "LOW", "keywords_detected": [], "analysis": "AI client unavailable."}
         
-        # Layer 3: Combined risk assessment
-        combined_risk = self._combine_risk_assessments(keyword_risk, ai_analysis)
-        
-        return combined_risk
+        combined = self._combine_risk_assessments(keyword_risk, ai_analysis)
+        return combined
     
     def _keyword_based_detection(self, text):
-        """Detect crisis keywords and calculate risk score"""
         text_lower = text.lower()
         detected_keywords = []
         total_score = 0
@@ -53,7 +53,7 @@ class CrisisDetector:
                     detected_keywords.append((keyword, category))
                     total_score += self.severity_weights.get(category, 1)
         
-        # Determine risk level based on score
+        # Map score to canonical levels
         if total_score >= 10:
             risk_level = "critical"
         elif total_score >= 6:
@@ -71,29 +71,23 @@ class CrisisDetector:
         }
     
     def _combine_risk_assessments(self, keyword_risk, ai_analysis):
-        """Combine multiple risk assessment methods"""
-        
-        # Risk level hierarchy: critical > high > moderate > low
-        risk_levels = ["low", "moderate", "high", "critical"]
-        
-        # Safely get index, defaulting to low if risk_level is unexpected
+        # canonical ordering
+        order = ["low", "moderate", "high", "critical"]
+        # ai risk -> normalize to lowercase/canonical
+        raw_ai = ai_analysis.get("risk_level", "LOW")
+        ai_level = _CANON_LEVELS.get(str(raw_ai).lower(), _CANON_LEVELS.get(str(raw_ai), "LOW")).lower()
         try:
-            keyword_level_idx = risk_levels.index(keyword_risk["risk_level"])
+            a_idx = order.index(ai_level)
         except ValueError:
-            keyword_level_idx = risk_levels.index("low")
-            
+            a_idx = 0
         try:
-            ai_level_idx = risk_levels.index(ai_analysis["risk_level"].lower()) # Ensure lowercase from AI
+            k_idx = order.index(keyword_risk.get("risk_level", "low"))
         except ValueError:
-            ai_level_idx = risk_levels.index("low")
-        
-        # Take the higher risk level
-        combined_level = risk_levels[max(keyword_level_idx, ai_level_idx)]
-        
-        # If either method detects critical risk, escalate immediately
-        if keyword_risk["risk_level"] == "critical" or ai_analysis["risk_level"].lower() == "critical":
+            k_idx = 0
+        combined_level = order[max(a_idx, k_idx)]
+        # escalate if either says critical/severe
+        if keyword_risk.get("risk_level") == "critical" or str(raw_ai).lower() in ("critical", "severe"):
             combined_level = "critical"
-        
         return {
             "final_risk_level": combined_level,
             "keyword_analysis": keyword_risk,
@@ -103,85 +97,34 @@ class CrisisDetector:
         }
     
     def trigger_crisis_intervention(self, risk_assessment):
-        """Display appropriate crisis intervention based on risk level"""
-        
-        if risk_assessment["immediate_crisis"]:
+        if risk_assessment.get("immediate_crisis"):
             self._show_immediate_crisis_resources()
-        elif risk_assessment["requires_intervention"]:
+        elif risk_assessment.get("requires_intervention"):
             self._show_support_resources()
-            
-        return risk_assessment["requires_intervention"]
+        return risk_assessment.get("requires_intervention", False)
     
     def _show_immediate_crisis_resources(self):
-        """Display immediate crisis intervention resources"""
-        st.error("""
-        🚨 **IMMEDIATE CRISIS RESOURCES**
-        
-        **If you're in immediate danger, call 911**
-        
-        **For mental health crisis support:**
-        - 🆘 **Call 988** - Suicide & Crisis Lifeline (24/7)
-        - 💬 **Text HOME to 741741** - Crisis Text Line
-        - 🌐 **Chat online**: [suicidepreventionlifeline.org](https://suicidepreventionlifeline.org)
-        
-        **Remember:** You matter, and there are people who want to help. These services are free, confidential, and available 24/7.
-        """)
-        
-        # Log crisis event (anonymized)
-        st.session_state.data_manager.log_crisis_event("immediate")
+        st.error("🚨 IMMEDIATE CRISIS RESOURCES — If you're in immediate danger call emergency services.")
+        # guard data_manager
+        if st.session_state.get('data_manager'):
+            try:
+                st.session_state.data_manager.log_crisis_event("immediate")
+            except Exception:
+                pass
     
     def _show_support_resources(self):
-        """Display general support resources"""
-        st.warning("""
-        💛 **We're here to support you**
-        
-        It sounds like you might be going through a tough time. Here are some resources that can help:
-        
-        **Talk to someone:**
-        - 📞 **988** - Suicide & Crisis Lifeline
-        - 💬 **Text HOME to 741741** - Crisis Text Line
-        - 🏥 **Find local mental health services**: [samhsa.gov/find-help](https://www.samhsa.gov/find-help)
-        
-        **Immediate coping strategies:**
-        - Take 5 deep breaths
-        - Name 5 things you can see, 4 you can touch, 3 you can hear
-        - Reach out to a trusted friend or family member
-        - Use our breathing exercises tool
-        
-        Remember: Seeking help is a sign of strength, not weakness.
-        """)
-        
-        # Log support event (anonymized)
-        st.session_state.data_manager.log_crisis_event("support")
+        st.warning("💛 We're here to support you — consider contacting local support or using coping strategies.")
+        if st.session_state.get('data_manager'):
+            try:
+                st.session_state.data_manager.log_crisis_event("support")
+            except Exception:
+                pass
     
     def get_crisis_follow_up_message(self, risk_level):
-        """Generate appropriate follow-up message after crisis detection"""
-        
-        if risk_level == "critical":
-            return """
-            I'm really concerned about you right now. Please reach out to one of the crisis resources above. 
-            You don't have to go through this alone, and there are people trained to help in situations like this.
-            
-            Would you like to try some grounding exercises while you consider reaching out for help?
-            """
-        
-        elif risk_level == "high":
-            return """
-            I can hear that you're struggling right now, and I want you to know that your feelings are valid. 
-            It might be helpful to talk to someone who can provide more support than I can offer.
-            
-            In the meantime, would you like to explore some coping strategies together?
-            """
-        
-        elif risk_level == "moderate":
-            return """
-            It sounds like you're dealing with some difficult feelings. That takes courage to share.
-            
-            Would you like to work through some coping techniques, or would you prefer to talk about 
-            what's been on your mind?
-            """
-        
-        return """
-        Thank you for sharing. I'm here to listen and support you. 
-        What would be most helpful for you right now?
-        """
+        if risk_level in ("critical", "CRITICAL"):
+            return "I'm really concerned about you right now. Please reach out to crisis resources. Would you like grounding exercises?"
+        if risk_level in ("high", "HIGH"):
+            return "I hear you're struggling — would you like to try some coping strategies together?"
+        if risk_level in ("moderate", "MODERATE"):
+            return "Thanks for sharing. Would you like to work through coping techniques?"
+        return "Thank you for sharing. I'm here to listen. What would be most helpful for you?"
