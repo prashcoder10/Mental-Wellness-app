@@ -247,7 +247,7 @@ def render_thought_record():
 
 
 def render_pattern_identification():
-"""Identify patterns across saved thought records"""
+    """Identify patterns across saved thought records"""
     st.subheader("🔍 Identify Thought Patterns")
     records = st.session_state.data_manager.get_all_cbt_records()
     if not records:
@@ -271,7 +271,7 @@ def render_pattern_identification():
 
 
 def render_cbt_education():
-"""Provide educational content for CBT"""
+    """Provide educational content for CBT"""
     st.subheader("📚 Learn About CBT")
 
     st.markdown("### Cognitive Distortions")
@@ -283,7 +283,7 @@ def render_cbt_education():
         st.write(f"• {exercise['title']}: {exercise['description']}")
 
 def render_cbt_progress():
-"""Show progress from saved thought records"""
+    """Show progress from saved thought records"""
     st.subheader("📊 Your CBT Progress")
 
     records = st.session_state.data_manager.get_all_cbt_records()
