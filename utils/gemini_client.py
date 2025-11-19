@@ -4,6 +4,8 @@ import os
 import json
 import streamlit as st
 import google.generativeai as genai
+import time
+from google.genai.errors import ServerError
 
 
 MODEL = "gemini-2.0-flash"
@@ -44,27 +46,62 @@ class GeminiClient:
     # ---------------------------------------------
     # INTERNAL WRAPPER (new correct Gemini call)
     # ---------------------------------------------
-    def _generate(self, prompt, json_output=False):
+    def _generate(self, prompt, json_output=False, max_retries=3):
+        for attempt in range(max_retries):
+            try:
+                response = self.model.generate_content(
+                    prompt,
+                    generation_config={
+                        "response_mime_type": "application/json"
+                        if json_output else "text/plain",
+                    }
+                )
+
+                return response.text  # safe output
+
+            except ServerError as e:
+                if "503" in str(e) or "overloaded" in str(e).lower():
+                    time.sleep(1.5)
+                    continue
+                raise e  # rethrow if other server error
+
+            except Exception as e:
+                raise RuntimeError(f"Gemini Request Failed: {e}")
+
+        # final fallback model (very stable)
+        fallback = genai.GenerativeModel("gemini-1.5-flash")
         try:
-            response = self.model.generate_content(
+            response = fallback.generate_content(
                 prompt,
                 generation_config={
                     "response_mime_type": "application/json"
-                    if json_output else "text/plain"
+                    if json_output else "text/plain",
                 }
             )
-
-            # Extract text safely
-            if json_output:
-                return response.text  # JSON text
-            else:
-                return response.text  # Normal text
-
+            return response.text
         except Exception as e:
-            st.error("🔥 Gemini API Error")
-            st.code(str(e))
-            print("GEMINI ERROR:", e)
             return None
+    # def _generate(self, prompt, json_output=False):
+    #     try:
+    #         response = self.model.generate_content(
+    #             prompt,
+    #             generation_config={
+    #                 "response_mime_type": "application/json"
+    #                 if json_output else "text/plain"
+    #             }
+    #         )
+
+    #         # Extract text safely
+    #         if json_output:
+    #             return response.text  # JSON text
+    #         else:
+    #             return response.text  # Normal text
+
+    #     except Exception as e:
+    #         st.error("🔥 Gemini API Error")
+    #         st.code(str(e))
+    #         print("GEMINI ERROR:", e)
+    #         return None
 
     # ------------------------------------------------------
     # NORMAL CHAT REPLY (fixed for new API)
