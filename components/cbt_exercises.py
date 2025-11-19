@@ -270,17 +270,46 @@ def render_pattern_identification():
 
 
 
+# def render_cbt_education():
+#     """Provide educational content for CBT"""
+#     st.subheader("📚 Learn About CBT")
+
+#     st.markdown("### Cognitive Distortions")
+#     for dist in COGNITIVE_DISTORTIONS:
+#         st.write(f"• {dist}: {COGNITIVE_DISTORTIONS[dist]}")
+
+#     st.markdown("### Example CBT Exercises")
+#     for exercise in CBT_EXERCISES:
+#         st.write(f"• {exercise['title']}: {exercise['description']}")
 def render_cbt_education():
     """Provide educational content for CBT"""
     st.subheader("📚 Learn About CBT")
 
-    st.markdown("### Cognitive Distortions")
-    for dist in COGNITIVE_DISTORTIONS:
-        st.write(f"• {dist}: {COGNITIVE_DISTORTIONS[dist]}")
-
     st.markdown("### Example CBT Exercises")
-    for exercise in CBT_EXERCISES:
-        st.write(f"• {exercise['title']}: {exercise['description']}")
+    for category, exercises in CBT_EXERCISES.items():
+        st.markdown(f"**{category.replace('_', ' ').title()}**")
+        # Check if exercises is a dict (like thought_records or behavioral_experiments)
+        if isinstance(exercises, dict):
+            for subcategory, items in exercises.items():
+                st.markdown(f"*{subcategory.replace('_', ' ').title()}*")
+                for item in items:
+                    st.write(f"• {item}")
+        # If it's just a list (like cognitive_restructuring or activity_scheduling)
+        elif isinstance(exercises, list):
+            for item in exercises:
+                st.write(f"• {item}")
+        st.markdown("---")  # separator between categories
+
+    st.markdown("### Cognitive Distortions")
+    for distortion, info in COGNITIVE_DISTORTIONS.items():
+        st.markdown(f"**{distortion}**")
+        st.write(f"Description: {info.get('description', '')}")
+        st.write(f"Example: {info.get('example', '')}")
+        st.write(f"Challenge: {info.get('challenge', '')}")
+        st.write(f"Alternative: {info.get('alternative', '')}")
+        st.markdown("---")
+
+
 
 def render_cbt_progress():
     """Show progress from saved thought records"""
