@@ -195,6 +195,8 @@ def render_thought_record():
             with st.spinner("Getting AI insights..."):
                 try:
                     ai_insights = st.session_state.gemini_client.generate_cbt_insight(thought_record)
+                    if "balanced_thoughts" in ai_insights and isinstance(ai_insights["balanced_thoughts"], str): 
+                        ai_insights["balanced_thoughts"] = [ai_insights["balanced_thoughts"]]
                 except Exception as e:
                     ai_insights = {"error": f"AI call failed: {e}"}
                     st.warning("AI insights are temporarily unavailable.")
