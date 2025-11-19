@@ -55,7 +55,8 @@ def render_chat_interface():
 
     # Chat input
     user_input = st.chat_input("What's on your mind?")
-    
+    print("DEBUG-SENDING-TO-GEMINI:", user_input) ##added lines
+
     if user_input:
         # Save user message
         try:
@@ -78,7 +79,8 @@ def render_chat_interface():
                 st.session_state.current_persona,
                 conversation_history
             )
-            
+            print("DEBUG-GEMINI-RESPONSE:", ai_response) ##added lines
+
             if crisis_detected:
                 follow_up = st.session_state.crisis_detector.get_crisis_follow_up_message(risk_assessment["final_risk_level"])
                 ai_response = f"{ai_response}\n\n{follow_up}"
