@@ -1,7 +1,7 @@
 import re
 import streamlit as st
 from utils.gemini_client import GeminiClient
-from utils.crisis_keywords import CRISIS_KEYWORDS, SEVERITY_WEIGHTS
+from data.crisis_keywords import CRISIS_KEYWORDS, SEVERITY_WEIGHTS
 
 
 _CANON_LEVELS = {
