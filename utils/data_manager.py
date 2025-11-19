@@ -99,6 +99,10 @@ class DataManager:
             "ai_insights": cbt_data.get("ai_insights")
         }
         st.session_state.cbt_records.append(record)
+    def get_all_cbt_records(self):
+        """Retrieve all saved CBT thought records"""
+# Return the stored CBT records or an empty list if none exist
+        return st.session_state.get('cbt_records', [])
     
     def log_crisis_event(self, crisis_type):
         """Log crisis intervention event (anonymized)"""
