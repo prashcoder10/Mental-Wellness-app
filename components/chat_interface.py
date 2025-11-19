@@ -108,20 +108,15 @@ import uuid
 
 
 def render_chat_interface():
-    st.header("💬 Chat Support")
-    st.markdown("Choose your support style and start a conversation.")
 
-    # ---------------------
+    # -----------------------
     # INITIALIZATION
-    # ---------------------
+    # -----------------------
     if "chat_history" not in st.session_state:
         st.session_state.chat_history = []
 
-    if "last_processed_input" not in st.session_state:
-        st.session_state.last_processed_input = None
-
-    if 'session_start' not in st.session_state:
-        st.session_state.session_start = __import__('datetime').datetime.now().isoformat()
+    if "last_input" not in st.session_state:
+        st.session_state.last_input = None
 
     if 'data_manager' not in st.session_state:
         st.session_state.data_manager = DataManager(user_id=str(uuid.uuid4()))
@@ -135,20 +130,22 @@ def render_chat_interface():
     if 'crisis_detector' not in st.session_state:
         st.session_state.crisis_detector = CrisisDetector()
 
-    if 'current_persona' not in st.session_state:
-        st.session_state.current_persona = "therapist"
+    if "persona" not in st.session_state:
+        st.session_state.persona = "therapist"
 
-    # ---------------------
-    # FIX 1: Use radio instead of button
-    # ---------------------
+    # -----------------------
+    # PERSONA SELECTION — FIXED
+    # DOES NOT TRIGGER CHAT REPROCESSING
+    # -----------------------
     persona = st.radio(
         "Support Style",
         ["peer", "mentor", "therapist"],
-        index=["peer", "mentor", "therapist"].index(st.session_state.current_persona),
-        horizontal=True,
-        key="persona_selector"
+        index=["peer", "mentor", "therapist"].index(st.session_state.persona),
+        horizontal=True
     )
-    st.session_state.current_persona = persona
+
+    # Update persona WITHOUT triggering rerun logic
+    st.session_state.persona = persona
 
     persona_display = {
         "peer": "Peer Support",
@@ -157,25 +154,30 @@ def render_chat_interface():
     }
     st.info(f"Current support style: {persona_display[persona]}")
 
-    # ---------------------
+    # -----------------------
     # DISPLAY CHAT HISTORY
-    # ---------------------
+    # -----------------------
     for msg in st.session_state.chat_history:
         with st.chat_message(msg["role"]):
             st.write(msg["content"])
 
-    # ---------------------
-    # USER INPUT
-    # ---------------------
+    # -----------------------
+    # INPUT
+    # -----------------------
     user_input = st.chat_input("What's on your mind?")
 
-    # Only process if new input (FIX 2)
-    if user_input and user_input != st.session_state.last_processed_input:
+    # ------------------------------------
+    # PROCESS INPUT ONLY IF IT'S NEW
+    # NO RERUN — FIXES DUPLICATES & DELAY
+    # ------------------------------------
+    if user_input and user_input != st.session_state.last_input:
 
-        st.session_state.last_processed_input = user_input
+        st.session_state.last_input = user_input
 
-        # Add to chat history
-        st.session_state.chat_history.append({"role": "user", "content": user_input})
+        # Append user message
+        st.session_state.chat_history.append(
+            {"role": "user", "content": user_input}
+        )
 
         # Save user message
         st.session_state.data_manager.save_chat_message(
@@ -186,27 +188,33 @@ def render_chat_interface():
         risk = st.session_state.crisis_detector.analyze_text_for_crisis(user_input)
         st.session_state.crisis_detector.trigger_crisis_intervention(risk)
 
-        # Get conversation history
-        convo = st.session_state.data_manager.get_conversation_history()
+        # Conversation history
+        history = st.session_state.data_manager.get_conversation_history()
 
-        # Get AI response
+        # AI response
         try:
             ai = st.session_state.gemini_client.get_empathetic_response(
-                user_input, persona, convo
+                user_input,
+                persona,
+                history
             )
         except:
-            ai = "Sorry, I'm having trouble generating a response right now."
+            ai = "I'm having trouble right now. Please try again."
 
-        # Add crisis follow-up if needed
+        # Crisis follow-up
         if risk["immediate_crisis"] or risk["requires_intervention"]:
             follow = st.session_state.crisis_detector.get_crisis_follow_up_message(
                 risk["final_risk_level"]
             )
-            ai = f"{ai}\n\n{follow}"
+            ai = ai + "\n\n" + follow
 
         # Save AI message
-        st.session_state.chat_history.append({"role": "assistant", "content": ai})
-        st.session_state.data_manager.save_chat_message("assistant", ai, persona=persona)
+        st.session_state.chat_history.append(
+            {"role": "assistant", "content": ai}
+        )
 
-        # Update UI
-        st.rerun()
+        st.session_state.data_manager.save_chat_message(
+            "assistant", ai, persona=persona
+        )
+
+        # 🚫 NO st.rerun() — THIS WAS THE BUG
