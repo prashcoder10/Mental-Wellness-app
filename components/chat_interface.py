@@ -111,11 +111,14 @@ def render_chat_interface():
     st.header("💬 Chat Support")
     st.markdown("Choose your support style and start a conversation.")
 
-    # -----------------------------
-    # 🔧 Initialize session states
-    # -----------------------------
+    # ---------------------
+    # INITIALIZATION
+    # ---------------------
     if "chat_history" not in st.session_state:
         st.session_state.chat_history = []
+
+    if "last_processed_input" not in st.session_state:
+        st.session_state.last_processed_input = None
 
     if 'session_start' not in st.session_state:
         st.session_state.session_start = __import__('datetime').datetime.now().isoformat()
@@ -126,8 +129,7 @@ def render_chat_interface():
     if 'gemini_client' not in st.session_state:
         try:
             st.session_state.gemini_client = GeminiClient()
-        except Exception as e:
-            st.error(f"Gemini client init error: {e}")
+        except:
             st.session_state.gemini_client = None
 
     if 'crisis_detector' not in st.session_state:
@@ -136,112 +138,75 @@ def render_chat_interface():
     if 'current_persona' not in st.session_state:
         st.session_state.current_persona = "therapist"
 
-    # -----------------------------
-    # 🎭 Persona selection
-    # -----------------------------
-    col1, col2, col3 = st.columns(3)
+    # ---------------------
+    # FIX 1: Use radio instead of button
+    # ---------------------
+    persona = st.radio(
+        "Support Style",
+        ["peer", "mentor", "therapist"],
+        index=["peer", "mentor", "therapist"].index(st.session_state.current_persona),
+        horizontal=True,
+        key="persona_selector"
+    )
+    st.session_state.current_persona = persona
 
-    with col1:
-        if st.button("👥 Peer Support"):
-            st.session_state.current_persona = "peer"
-
-    with col2:
-        if st.button("🌟 Mentor"):
-            st.session_state.current_persona = "mentor"
-
-    with col3:
-        if st.button("🧑‍⚕️ Therapist"):
-            st.session_state.current_persona = "therapist"
-
-    persona_names = {
+    persona_display = {
         "peer": "Peer Support",
         "mentor": "Mentor",
         "therapist": "Therapist"
     }
-    st.info(f"Current support style: {persona_names[st.session_state.current_persona]}")
+    st.info(f"Current support style: {persona_display[persona]}")
 
-    # -----------------------------
-    # 💬 Display chat history
-    # -----------------------------
-    for message in st.session_state.chat_history:
-        with st.chat_message(message["role"]):
-            st.write(message["content"])
+    # ---------------------
+    # DISPLAY CHAT HISTORY
+    # ---------------------
+    for msg in st.session_state.chat_history:
+        with st.chat_message(msg["role"]):
+            st.write(msg["content"])
 
-    # -----------------------------
-    # ⌨️ Chat input
-    # -----------------------------
+    # ---------------------
+    # USER INPUT
+    # ---------------------
     user_input = st.chat_input("What's on your mind?")
-    print("DEBUG-SENDING-TO-GEMINI:", user_input)
 
-    if user_input:
+    # Only process if new input (FIX 2)
+    if user_input and user_input != st.session_state.last_processed_input:
 
-        # Add user message to chat history FIRST
+        st.session_state.last_processed_input = user_input
+
+        # Add to chat history
         st.session_state.chat_history.append({"role": "user", "content": user_input})
 
-        # Save to DB
+        # Save user message
+        st.session_state.data_manager.save_chat_message(
+            "user", user_input, persona=persona
+        )
+
+        # Crisis detection
+        risk = st.session_state.crisis_detector.analyze_text_for_crisis(user_input)
+        st.session_state.crisis_detector.trigger_crisis_intervention(risk)
+
+        # Get conversation history
+        convo = st.session_state.data_manager.get_conversation_history()
+
+        # Get AI response
         try:
-            st.session_state.data_manager.save_chat_message(
-                "user",
-                user_input,
-                persona=st.session_state.current_persona
+            ai = st.session_state.gemini_client.get_empathetic_response(
+                user_input, persona, convo
             )
-        except Exception as e:
-            st.error(f"Error saving user message: {e}")
+        except:
+            ai = "Sorry, I'm having trouble generating a response right now."
 
-        # -----------------------------
-        # 🚨 Crisis detection
-        # -----------------------------
-        risk_assessment = st.session_state.crisis_detector.analyze_text_for_crisis(user_input)
-        crisis_detected = st.session_state.crisis_detector.trigger_crisis_intervention(risk_assessment)
-
-        conversation_history = st.session_state.data_manager.get_conversation_history()
-
-        # -----------------------------
-        # 🤖 Call Gemini
-        # -----------------------------
-        try:
-            if st.session_state.gemini_client is None:
-                raise RuntimeError("Gemini client unavailable. Check API key.")
-
-            ai_response = st.session_state.gemini_client.get_empathetic_response(
-                user_input,
-                st.session_state.current_persona,
-                conversation_history
+        # Add crisis follow-up if needed
+        if risk["immediate_crisis"] or risk["requires_intervention"]:
+            follow = st.session_state.crisis_detector.get_crisis_follow_up_message(
+                risk["final_risk_level"]
             )
-            print("DEBUG-GEMINI-RESPONSE:", ai_response)
+            ai = f"{ai}\n\n{follow}"
 
-            if crisis_detected:
-                follow_up = st.session_state.crisis_detector.get_crisis_follow_up_message(
-                    risk_assessment["final_risk_level"]
-                )
-                ai_response += f"\n\n{follow_up}"
+        # Save AI message
+        st.session_state.chat_history.append({"role": "assistant", "content": ai})
+        st.session_state.data_manager.save_chat_message("assistant", ai, persona=persona)
 
-            # Save into chat history
-            st.session_state.chat_history.append({"role": "assistant", "content": ai_response})
-
-            # Save to DB
-            st.session_state.data_manager.save_chat_message(
-                "assistant",
-                ai_response,
-                persona=st.session_state.current_persona
-            )
-
-        except Exception as e:
-            st.error(f"Error getting assistant response: {e}")
-
-            fallback = "Sorry — I'm having trouble generating a response right now. Please try again in a moment."
-            st.session_state.chat_history.append({"role": "assistant", "content": fallback})
-
-            try:
-                st.session_state.data_manager.save_chat_message(
-                    "assistant",
-                    fallback,
-                    persona=st.session_state.current_persona
-                )
-            except Exception:
-                pass
-
-        # Allow UI to update normally (no rerun)
-
-
-
+        # Update UI
+        st.rerun()
