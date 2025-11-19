@@ -1,12 +1,9 @@
-# utils/gemini_client.py
-
 import os
 import json
 import streamlit as st
 import google.generativeai as genai
 import time
 from google.genai.errors import ServerError
-
 
 MODEL = "gemini-2.0-flash"
 
@@ -30,81 +27,58 @@ Return ONLY a JSON object:
 }
 """
 
-
 class GeminiClient:
     def __init__(self):
         api_key = os.environ.get("GEMINI_API_KEY")
         if not api_key:
             raise EnvironmentError("❌ GEMINI_API_KEY not set.")
 
-        # Configure new Gemini SDK (2025 syntax)
         genai.configure(api_key=api_key)
-
-        # Load model
         self.model = genai.GenerativeModel(MODEL)
 
-    # ---------------------------------------------
-    # INTERNAL WRAPPER (new correct Gemini call)
-    # ---------------------------------------------
+    # ------------------------------------------------------
+    # SAFE INTERNAL GEMINI CALL (retry + fallback)
+    # ------------------------------------------------------
     def _generate(self, prompt, json_output=False, max_retries=3):
         for attempt in range(max_retries):
             try:
                 response = self.model.generate_content(
                     prompt,
                     generation_config={
-                        "response_mime_type": "application/json"
-                        if json_output else "text/plain",
+                        "response_mime_type": (
+                            "application/json" if json_output else "text/plain"
+                        )
                     }
                 )
-
-                return response.text  # safe output
+                return response.text
 
             except ServerError as e:
                 if "503" in str(e) or "overloaded" in str(e).lower():
                     time.sleep(1.5)
                     continue
-                raise e  # rethrow if other server error
+                raise e
 
             except Exception as e:
-                raise RuntimeError(f"Gemini Request Failed: {e}")
+                raise RuntimeError(f"Gemini request failed: {e}")
 
-        # final fallback model (very stable)
-        fallback = genai.GenerativeModel("gemini-1.5-flash")
+        # Fallback model
         try:
+            fallback = genai.GenerativeModel("gemini-1.5-flash")
             response = fallback.generate_content(
                 prompt,
                 generation_config={
-                    "response_mime_type": "application/json"
-                    if json_output else "text/plain",
+                    "response_mime_type": (
+                        "application/json" if json_output else "text/plain"
+                    )
                 }
             )
             return response.text
-        except Exception as e:
+
+        except:
             return None
-    # def _generate(self, prompt, json_output=False):
-    #     try:
-    #         response = self.model.generate_content(
-    #             prompt,
-    #             generation_config={
-    #                 "response_mime_type": "application/json"
-    #                 if json_output else "text/plain"
-    #             }
-    #         )
-
-    #         # Extract text safely
-    #         if json_output:
-    #             return response.text  # JSON text
-    #         else:
-    #             return response.text  # Normal text
-
-    #     except Exception as e:
-    #         st.error("🔥 Gemini API Error")
-    #         st.code(str(e))
-    #         print("GEMINI ERROR:", e)
-    #         return None
 
     # ------------------------------------------------------
-    # NORMAL CHAT REPLY (fixed for new API)
+    # NORMAL EMPATHETIC CHAT
     # ------------------------------------------------------
     def get_empathetic_response(self, user_input, persona, conversation_history):
         personas = {
@@ -115,9 +89,8 @@ class GeminiClient:
 
         persona_text = personas.get(persona, personas["therapist"])
 
-        # Build conversation transcript
         chat_text = ""
-        for msg in conversation_history[-10:]:  # limit context to 10 messages
+        for msg in conversation_history[-10:]:
             chat_text += f"{msg['role'].upper()}: {msg['content']}\n"
 
         chat_text += f"USER: {user_input}"
@@ -134,10 +107,10 @@ Respond empathically, briefly, and safely.
 """
 
         reply = self._generate(full_prompt)
-        return reply or "I'm here with you — could you share more about how you're feeling?"
+        return reply or "I'm here with you — could you share a little more?"
 
     # ------------------------------------------------------
-    # JSON: CBT Insight
+    # CBT JSON INSIGHT
     # ------------------------------------------------------
     def generate_cbt_insight(self, thought_record: dict) -> dict:
         prompt = f"""
@@ -149,16 +122,14 @@ Return a JSON object with ONLY:
 Here is the user's CBT thought record:
 {json.dumps(thought_record, indent=2)}
 """
-
         raw = self._generate(prompt, json_output=True)
-
         try:
             return json.loads(raw)
         except:
             return {"error": "Failed to parse CBT JSON."}
 
     # ------------------------------------------------------
-    # JSON: Journal Prompt Generation
+    # JOURNAL PROMPT JSON
     # ------------------------------------------------------
     def generate_personalized_journal_prompt(self, mood_context, recent_themes):
         prompt = f"""
@@ -171,16 +142,14 @@ Mood context:
 
 Themes: {recent_themes}
 """
-
         raw = self._generate(prompt, json_output=True)
-
         try:
             return json.loads(raw)
         except:
             return {"error": "Failed to parse journal prompt JSON."}
 
     # ------------------------------------------------------
-    # JSON: Crisis Detection Model
+    # CRISIS DETECTION JSON
     # ------------------------------------------------------
     def analyze_text_for_crisis(self, user_input: str):
         prompt = f"{CRISIS_INSTRUCTION}\n\nUser message: {user_input}"
